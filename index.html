@@ -101,11 +101,11 @@
 const e = React.createElement;
 const { useState, useEffect, useMemo } = React;
 
-// ================================================F============
+// ============================================================
 // VUL HIERONDER JE EIGEN GOOGLE APPS SCRIPT WEB APP URL IN
 // (die krijg je in stap 4 van het stappenplan, eindigt op /exec)
 // ============================================================
-const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbzUuFJzUG497Wy8p9SitXHiWzNLCUT6zGdg1VvZEAldr5au9qDCtuaeHEaVBYWpoPu7/exec";
+const SHEET_API_URL = "https://script.google.com/macros/s/AKfycbw6vCETFQqvCOqrWKk5XayLdBqGqjnv9nWybj-qUQFvQdySzyHulf7eRwu6XIMTqYMH/exec";
 
 // ============================================================
 // TOEGANGSCODE — verander dit in je eigen cijfercode.
@@ -363,6 +363,8 @@ function HistoryTable({ records, onEdit, onDelete }){
 }
 
 // ---------- Main app ----------
+const CACHE_KEY = 'kippenhok_cache_v1';
+
 function App(){
   const [records, setRecords] = useState([]);
   const [editing, setEditing] = useState(null);
@@ -375,31 +377,43 @@ function App(){
       const fresh = await fetchRecordsFromSheet();
       setRecords(fresh);
       setError(null);
+      try{ localStorage.setItem(CACHE_KEY, JSON.stringify(fresh)); }catch(err){}
     }catch(err){
       setError('Kon geen verbinding maken met de Google Sheet. Controleer de SHEET_API_URL en of de Web app op "Anyone" staat.');
     }
   }
 
   useEffect(() => {
-    setLoading(true);
-    refresh().finally(() => setLoading(false));
+    let toondCache = false;
+    try{
+      const cached = localStorage.getItem(CACHE_KEY);
+      if(cached){
+        const parsed = JSON.parse(cached);
+        if(Array.isArray(parsed)){
+          setRecords(parsed);
+          setLoading(false); // toon meteen de laatst bekende stand, geen wachtscherm
+          toondCache = true;
+        }
+      }
+    }catch(err){}
+    refresh().finally(() => { if(!toondCache) setLoading(false); });
   }, []);
 
   async function handleSave(record){
     setSyncing(true);
     setRecords(prev => [...prev.filter(r => r.datum !== record.datum), record]); // meteen zien
     await sendToSheet(Object.assign({action:'save'}, record));
-    await refresh();
     setSyncing(false);
     setEditing(null);
+    refresh(); // op de achtergrond bijwerken, hoeft niet af te wachten
   }
   async function handleDelete(datum){
     if(!confirm('Deze dag verwijderen?')) return;
     setSyncing(true);
     setRecords(prev => prev.filter(r => r.datum !== datum));
     await sendToSheet({action:'delete', datum});
-    await refresh();
     setSyncing(false);
+    refresh(); // op de achtergrond bijwerken
   }
   function handleExport(){
     const sorted = [...records].sort((a,b) => a.datum.localeCompare(b.datum));
